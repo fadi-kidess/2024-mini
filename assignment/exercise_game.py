@@ -7,10 +7,26 @@ import time
 import random
 import json
 
+import urequests
+import network
+import socket
+from time import sleep
+from picozero import pico_temp_sensor, pico_led
+import machine
 
-N: int = 3
+ssid = "BU Guest (unencrypted)"
+password = ''
+
+
+
+N: int = 10
 sample_ms = 10.0
 on_ms = 500
+
+
+server = "http://api.thingspeak.com/"
+apikey = "DIF6NZYKGH2H0TWI"
+field = 1
 
 
 def random_time_interval(tmin: float, tmax: float) -> float:
@@ -57,8 +73,11 @@ def scorer(t: list[int | None]) -> None:
     # add key, value to this dict to store the minimum, maximum, average response time
     # and score (non-misses / total flashes) i.e. the score a floating point number
     # is in range [0..1]
-    data = {}
-
+    data = {"Minimum" : min(t_good), "Maximum": max(t_good), "Average":sum(t_good)/len(t_good),"Score":len(t_good)/len(t)}
+    minimum = min(t_good)
+    maximum = max(t_good)
+    average = sum(t_good)/len(t_good)
+    score = len(t_good)/len(t)
     # %% make dynamic filename and write JSON
 
     now: tuple[int] = time.localtime()
@@ -69,16 +88,35 @@ def scorer(t: list[int | None]) -> None:
     print("write", filename)
 
     write_json(filename, data)
-
+    
+    url = f"{server}/update?api_key={apikey}&field{field}={minimum}&field2={maximum}&field3={average}&field4={score}"
+    request = urequests.post(url,json=data)
+    print(request)
+    print(data)
+    request.close()
+    
+    
+def connect():
+    #Connect to WLAN
+    wlan = network.WLAN(network.STA_IF)
+    wlan.active(True)
+    wlan.connect(ssid, password)
+    while wlan.isconnected() == False:
+        print('Waiting for connection...')
+        sleep(1)
+    print(wlan.ifconfig())
 
 if __name__ == "__main__":
+    
+
+    
     # using "if __name__" allows us to reuse functions in other script files
 
     led = Pin("LED", Pin.OUT)
-    button = Pin(16, Pin.IN, Pin.PULL_UP)
+    button = Pin(12, Pin.IN, Pin.PULL_UP)
 
     t: list[int | None] = []
-
+    
     blinker(3, led)
 
     for i in range(N):
@@ -93,10 +131,14 @@ if __name__ == "__main__":
                 t0 = time.ticks_diff(time.ticks_ms(), tic)
                 led.low()
                 break
+        
         t.append(t0)
-
+        print(t0)
         led.low()
 
     blinker(5, led)
-
+    try:
+        connect()
+    except KeyboardInterrupt:
+        machine.reset()
     scorer(t)
